@@ -398,29 +398,24 @@ class guiLogic(ScriptedLoadableModuleLogic):
         """
         if not DicomDir.exists() or not SavePath.exists():
             raise ValueError("DicomDir and or OutputDir is invalid")
-            
+        
         # create a subfolder for results
         from datetime import datetime
         SaveDir = SavePath / datetime.now().strftime("%Y%m%d_%H%M%S")  # e.g. "20250615_153045"
         SaveDir.mkdir()
+            
+        slicer.app.processEvents()
+        slicer.mrmlScene.Clear(0)
+        slicer.app.processEvents()
 
         self.SpacingScale = SpacingScale
         self.IsotropicSpacing = IsotropicSpacing
         
-        slicer.app.processEvents()
-        slicer.mrmlScene.Clear(0)
-        slicer.app.processEvents()
-        
         import gc
 
-        if True:
-        #for i, P in enumerate(OpenDicom(DicomDataDir)):
-            # clear the scene
+        for i, P in enumerate(OpenDicom(DicomDataDir)):
 
-            # CurrentNode = DICOMUtils.loadPatientByUID(P)
-            import SampleData
-            CurrentNode = SampleData.SampleDataLogic().downloadSample('CTChest')
-            
+            CurrentNode = DICOMUtils.loadPatientByUID(P)
             # Crop volume
             Cropped, ROI = self.CropVolume(CurrentNode)
             # lungmask
@@ -435,8 +430,8 @@ class guiLogic(ScriptedLoadableModuleLogic):
             if not slicer.util.saveScene(save_path):
                 raise IOError("Failed to save")
 
+            # clear the scene
             slicer.mrmlScene.RemoveNode(ROI)
-            
             slicer.app.processEvents()
             slicer.mrmlScene.Clear(0)
             slicer.app.processEvents()
