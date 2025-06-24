@@ -413,7 +413,7 @@ class guiLogic(ScriptedLoadableModuleLogic):
         
         import gc
 
-        for i, P in enumerate(OpenDicom(DicomDataDir)):
+        for i, P in enumerate(self.OpenDicom(DicomDir)):
 
             CurrentNode = DICOMUtils.loadPatientByUID(P)
             # Crop volume
