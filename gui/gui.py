@@ -14,35 +14,40 @@ from slicer.parameterNodeWrapper import (
     WithinRange,
 )
 from pathlib import Path
+
+from datetime import datetime
+from DICOMLib import DICOMUtils
+import gc
+
 #
 # gui
 #
 
 class gui(ScriptedLoadableModule):
-    """Uses ScriptedLoadableModule base class, available at:
-    https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/ScriptedLoadableModule.py
-    """
+"""Uses ScriptedLoadableModule base class, available at:
+https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/ScriptedLoadableModule.py
+"""
 
-    def __init__(self, parent):
-        ScriptedLoadableModule.__init__(self, parent)
-        self.parent.title = _("gui")  # TODO: make this more human readable by adding spaces
-        # TODO: set categories (folders where the module shows up in the module selector)
-        self.parent.categories = [translate("qSlicerAbstractCoreModule", "Nasal")]
-        self.parent.dependencies = []  # TODO: add here list of module names that this module requires
-        self.parent.contributors = ["Tianze Kuang"]  # TODO: replace with "Firstname Lastname (Organization)"
-        # TODO: update with short description of the module and a link to online module documentation
-        # _() function marks text as translatable to other languages
-        self.parent.helpText = _("""
+def __init__(self, parent):
+    ScriptedLoadableModule.__init__(self, parent)
+    self.parent.title = _("gui")  # TODO: make this more human readable by adding spaces
+    # TODO: set categories (folders where the module shows up in the module selector)
+    self.parent.categories = [translate("qSlicerAbstractCoreModule", "Nasal")]
+    self.parent.dependencies = []  # TODO: add here list of module names that this module requires
+    self.parent.contributors = ["Tianze Kuang"]  # TODO: replace with "Firstname Lastname (Organization)"
+    # TODO: update with short description of the module and a link to online module documentation
+    # _() function marks text as translatable to other languages
+    self.parent.helpText = _("""
 This is an example of scripted loadable module bundled in an extension.
 See more information in <a href="https://github.com/organization/projectname#gui">module documentation</a>.
 """)
-        # TODO: replace with organization, grant and thanks
-        self.parent.acknowledgementText = _("""
+    # TODO: replace with organization, grant and thanks
+    self.parent.acknowledgementText = _("""
 This file was originally developed by Tianze Kuang
 """)
 
-        # Additional initialization step after application startup is complete
-        slicer.app.connect("startupCompleted()", registerSampleData)
+    # Additional initialization step after application startup is complete
+    slicer.app.connect("startupCompleted()", registerSampleData)
 
 
 #
@@ -51,11 +56,11 @@ This file was originally developed by Tianze Kuang
 
 
 def registerSampleData():
-    """Add data sets to Sample Data module."""
-    # It is always recommended to provide sample data for users to make it easy to try the module,
-    # but if no sample data is available then this method (and associated startupCompeted signal connection) can be removed.
+"""Add data sets to Sample Data module."""
+# It is always recommended to provide sample data for users to make it easy to try the module,
+# but if no sample data is available then this method (and associated startupCompeted signal connection) can be removed.
 
-    import SampleData
+import SampleData
 
     iconsPath = os.path.join(os.path.dirname(__file__), "Resources/Icons")
 
@@ -230,7 +235,7 @@ class guiWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 #
 # guiLogic
 #
-
+        
 class guiLogic(ScriptedLoadableModuleLogic):
     """This class should implement all the actual
     computation done by your module.  The interface
@@ -249,8 +254,6 @@ class guiLogic(ScriptedLoadableModuleLogic):
         return guiParameterNode(super().getParameterNode())
     
     def OpenDicom(self, DicomDir):
-        from DICOMLib import DICOMUtils
-        
         with DICOMUtils.TemporaryDICOMDatabase() as db:
             DICOMUtils.importDicom(DicomDir, db)
 
@@ -400,7 +403,6 @@ class guiLogic(ScriptedLoadableModuleLogic):
             raise ValueError("DicomDir and or OutputDir is invalid")
         
         # create a subfolder for results
-        from datetime import datetime
         SaveDir = SavePath / datetime.now().strftime("%Y%m%d_%H%M%S")  # e.g. "20250615_153045"
         SaveDir.mkdir()
             
@@ -411,8 +413,6 @@ class guiLogic(ScriptedLoadableModuleLogic):
         self.SpacingScale = SpacingScale
         self.IsotropicSpacing = IsotropicSpacing
         
-        import gc
-
         for i, P in enumerate(self.OpenDicom(DicomDir)):
 
             CurrentNode = DICOMUtils.loadPatientByUID(P)
