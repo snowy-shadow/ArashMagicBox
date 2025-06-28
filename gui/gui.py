@@ -24,30 +24,28 @@ import gc
 #
 
 class gui(ScriptedLoadableModule):
-"""Uses ScriptedLoadableModule base class, available at:
-https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/ScriptedLoadableModule.py
-"""
+    """Uses ScriptedLoadableModule base class, available at:
+    https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/ScriptedLoadableModule.py
+    """
 
-def __init__(self, parent):
-    ScriptedLoadableModule.__init__(self, parent)
-    self.parent.title = _("gui")  # TODO: make this more human readable by adding spaces
-    # TODO: set categories (folders where the module shows up in the module selector)
-    self.parent.categories = [translate("qSlicerAbstractCoreModule", "Nasal")]
-    self.parent.dependencies = []  # TODO: add here list of module names that this module requires
-    self.parent.contributors = ["Tianze Kuang"]  # TODO: replace with "Firstname Lastname (Organization)"
-    # TODO: update with short description of the module and a link to online module documentation
-    # _() function marks text as translatable to other languages
-    self.parent.helpText = _("""
-This is an example of scripted loadable module bundled in an extension.
-See more information in <a href="https://github.com/organization/projectname#gui">module documentation</a>.
-""")
-    # TODO: replace with organization, grant and thanks
-    self.parent.acknowledgementText = _("""
-This file was originally developed by Tianze Kuang
-""")
+    def __init__(self, parent):
+        ScriptedLoadableModule.__init__(self, parent)
+        self.parent.title = _("gui")  # TODO: make this more human readable by adding spaces
+        # TODO: set categories (folders where the module shows up in the module selector)
+        self.parent.categories = [translate("qSlicerAbstractCoreModule", "Nasal")]
+        self.parent.dependencies = []  # TODO: add here list of module names that this module requires
+        self.parent.contributors = ["Tianze Kuang"]  # TODO: replace with "Firstname Lastname (Organization)"
+        # TODO: update with short description of the module and a link to online module documentation
+        # _() function marks text as translatable to other languages
+        self.parent.helpText = _("""
+            This is an example of scripted loadable module bundled in an extension.
+            See more information in <a href="https://github.com/organization/projectname#gui">module documentation</a>.
+            """)
+        # TODO: replace with organization, grant and thanks
+        self.parent.acknowledgementText = _("""This file was originally developed by Tianze Kuang""")
 
-    # Additional initialization step after application startup is complete
-    slicer.app.connect("startupCompleted()", registerSampleData)
+        # Additional initialization step after application startup is complete
+        slicer.app.connect("startupCompleted()", registerSampleData)
 
 
 #
@@ -56,11 +54,11 @@ This file was originally developed by Tianze Kuang
 
 
 def registerSampleData():
-"""Add data sets to Sample Data module."""
-# It is always recommended to provide sample data for users to make it easy to try the module,
-# but if no sample data is available then this method (and associated startupCompeted signal connection) can be removed.
+    """Add data sets to Sample Data module."""
+    # It is always recommended to provide sample data for users to make it easy to try the module,
+    # but if no sample data is available then this method (and associated startupCompeted signal connection) can be removed.
 
-import SampleData
+    import SampleData
 
     iconsPath = os.path.join(os.path.dirname(__file__), "Resources/Icons")
 
@@ -254,11 +252,43 @@ class guiLogic(ScriptedLoadableModuleLogic):
         return guiParameterNode(super().getParameterNode())
     
     def OpenDicom(self, DicomDir):
-        with DICOMUtils.TemporaryDICOMDatabase() as db:
-            DICOMUtils.importDicom(DicomDir, db)
+        """
+        Import a DICOM folder into the permanent database,
+        load all series of the first patient and first study,
+        and return a dict {seriesUID: [loaded nodes]}.
+        """
+        # Import the DICOM folder into the permanent database
+        DICOMUtils.importDicom(DicomDir, slicer.dicomDatabase)
 
-            return db.patients()
-        
+        # Get all patients
+        Patients = slicer.dicomDatabase.patients()
+        if not Patients:
+            raise RuntimeError("No patients found in the DICOM database after import.")
+
+        # Nested dict: patientUID -> studyUID -> seriesUID -> loaded nodes list
+        LoadedData = {}
+
+        # Loop over all patients
+        for patientUID in Patients:
+            Studies = slicer.dicomDatabase.studiesForPatient(patientUID)
+            if not Studies:
+                continue
+            LoadedData[patientUID] = {}
+
+            # Loop over all studies for this patient
+            for studyUID in Studies:
+                SeriesUIDs = slicer.dicomDatabase.seriesForStudy(studyUID)
+                if not SeriesUIDs:
+                    continue
+                LoadedData[patientUID][studyUID] = {}
+
+                # Loop over all series for this study
+                for seriesUID in SeriesUIDs:
+                    LoadedNodes = DICOMUtils.loadSeriesByUID(seriesUID)
+                    LoadedData[patientUID][studyUID][seriesUID] = LoadedNodes
+
+        return LoadedData
+    
     def CropVolume(self, PatientNode):
         # new crop volume config
         CropVolumeNode = slicer.vtkMRMLCropVolumeParametersNode() 
@@ -390,6 +420,28 @@ class guiLogic(ScriptedLoadableModuleLogic):
         TotalSegmentator.process(InputNode, OutputNode, fast = False, cpu = False, task = "head_glands_cavities", subset = None, interactive = False)
         return OutputNode
 
+    def ProcessNode(self, VolumeNode):
+        # Crop volume
+        Cropped, ROI = self.CropVolume(CurrentNode)
+        # lungmask
+        Lung = self.LungMask(Cropped)
+        # Total segmentator -> head cavities and glands
+        # Segment = self.GenerateSegment(Cropped)
+        # consider saveNode instead
+        '''
+        https://slicer.readthedocs.io/en/latest/developer_guide/script_repository.html#save-the-scene-into-a-single-mrb-file
+        '''
+        save_path = str(self.SaveDir) + f"/{CurrentNode.GetName()}_{SeriesUID}_processed.mrb"
+        if not slicer.util.saveScene(save_path):
+            raise IOError("Failed to save")
+
+        # clear the scene
+        slicer.mrmlScene.RemoveNode(ROI)
+        slicer.app.processEvents()
+        slicer.mrmlScene.Clear(0)
+        slicer.app.processEvents()
+        gc.collect()
+
     def Process(self, DicomDir, SavePath, SpacingScale = 0.5, IsotropicSpacing = True):
         """
         Run the processing algorithm.
@@ -403,8 +455,8 @@ class guiLogic(ScriptedLoadableModuleLogic):
             raise ValueError("DicomDir and or OutputDir is invalid")
         
         # create a subfolder for results
-        SaveDir = SavePath / datetime.now().strftime("%Y%m%d_%H%M%S")  # e.g. "20250615_153045"
-        SaveDir.mkdir()
+        self.SaveDir = SavePath / datetime.now().strftime("%Y%m%d_%H%M%S")  # e.g. "20250615_153045"
+        self.SaveDir.mkdir()
             
         slicer.app.processEvents()
         slicer.mrmlScene.Clear(0)
@@ -413,29 +465,7 @@ class guiLogic(ScriptedLoadableModuleLogic):
         self.SpacingScale = SpacingScale
         self.IsotropicSpacing = IsotropicSpacing
         
-        for i, P in enumerate(self.OpenDicom(DicomDir)):
-
-            CurrentNode = DICOMUtils.loadPatientByUID(P)
-            # Crop volume
-            Cropped, ROI = self.CropVolume(CurrentNode)
-            # lungmask
-            Lung = self.LungMask(Cropped)
-            # Total segmentator -> head cavities and glands
-            Segment = self.GenerateSegment(Cropped)
-            # consider saveNode instead
-            '''
-            https://slicer.readthedocs.io/en/latest/developer_guide/script_repository.html#save-the-scene-into-a-single-mrb-file
-            '''
-            save_path = str(SaveDir) + f"/{CurrentNode.GetName()}_{i}_processed.mrb"
-            if not slicer.util.saveScene(save_path):
-                raise IOError("Failed to save")
-
-            # clear the scene
-            slicer.mrmlScene.RemoveNode(ROI)
-            slicer.app.processEvents()
-            slicer.mrmlScene.Clear(0)
-            slicer.app.processEvents()
-            gc.collect()
+        for SeriesUID, CurrentNode in self.OpenDicom(DicomDir):
 
 #
 # guiTest
