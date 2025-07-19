@@ -18,6 +18,7 @@ from pathlib import Path
 from datetime import datetime
 from DICOMLib import DICOMUtils
 import gc
+import re
 
 #
 # gui
@@ -261,33 +262,7 @@ class guiLogic(ScriptedLoadableModuleLogic):
         DICOMUtils.importDicom(DicomDir, slicer.dicomDatabase)
 
         # Get all patients
-        Patients = slicer.dicomDatabase.patients()
-        if not Patients:
-            raise RuntimeError("No patients found in the DICOM database after import.")
-
-        # Nested dict: patientUID -> studyUID -> seriesUID -> loaded nodes list
-        LoadedData = {}
-
-        # Loop over all patients
-        for patientUID in Patients:
-            Studies = slicer.dicomDatabase.studiesForPatient(patientUID)
-            if not Studies:
-                continue
-            LoadedData[patientUID] = {}
-
-            # Loop over all studies for this patient
-            for studyUID in Studies:
-                SeriesUIDs = slicer.dicomDatabase.seriesForStudy(studyUID)
-                if not SeriesUIDs:
-                    continue
-                LoadedData[patientUID][studyUID] = {}
-
-                # Loop over all series for this study
-                for seriesUID in SeriesUIDs:
-                    LoadedNodes = DICOMUtils.loadSeriesByUID(seriesUID)
-                    LoadedData[patientUID][studyUID][seriesUID] = LoadedNodes
-
-        return LoadedData
+        return slicer.dicomDatabase.patients()
     
     def CropVolume(self, PatientNode):
         # new crop volume config
@@ -419,28 +394,21 @@ class guiLogic(ScriptedLoadableModuleLogic):
         """
         TotalSegmentator.process(InputNode, OutputNode, fast = False, cpu = False, task = "head_glands_cavities", subset = None, interactive = False)
         return OutputNode
+    
+    def CleanFilename(self, Name):
+        """
+        Removes characters that are not alphanumeric, space, underscore, or hyphen.
+        Also trims whitespace and replaces multiple spaces with a single underscore.
+        """
+        # Remove disallowed characters
+        Cleaned = re.sub(r'[<>:"/\\|?*\']', '', Name)
+        # Replace multiple spaces or hyphens with a single underscore
+        Cleaned = re.sub(r'[\s\-]+', '_', Cleaned)
+        # Trim leading/trailing underscores
+        Cleaned = Cleaned.strip('_')
 
-    def ProcessNode(self, VolumeNode):
-        # Crop volume
-        Cropped, ROI = self.CropVolume(CurrentNode)
-        # lungmask
-        Lung = self.LungMask(Cropped)
-        # Total segmentator -> head cavities and glands
-        # Segment = self.GenerateSegment(Cropped)
-        # consider saveNode instead
-        '''
-        https://slicer.readthedocs.io/en/latest/developer_guide/script_repository.html#save-the-scene-into-a-single-mrb-file
-        '''
-        save_path = str(self.SaveDir) + f"/{CurrentNode.GetName()}_{SeriesUID}_processed.mrb"
-        if not slicer.util.saveScene(save_path):
-            raise IOError("Failed to save")
-
-        # clear the scene
-        slicer.mrmlScene.RemoveNode(ROI)
-        slicer.app.processEvents()
-        slicer.mrmlScene.Clear(0)
-        slicer.app.processEvents()
-        gc.collect()
+        return Cleaned
+       
 
     def Process(self, DicomDir, SavePath, SpacingScale = 0.5, IsotropicSpacing = True):
         """
@@ -455,8 +423,8 @@ class guiLogic(ScriptedLoadableModuleLogic):
             raise ValueError("DicomDir and or OutputDir is invalid")
         
         # create a subfolder for results
-        self.SaveDir = SavePath / datetime.now().strftime("%Y%m%d_%H%M%S")  # e.g. "20250615_153045"
-        self.SaveDir.mkdir()
+        SaveDir = SavePath / datetime.now().strftime("%Y%m%d_%H%M%S")  # e.g. "20250615_153045"
+        SaveDir.mkdir()
             
         slicer.app.processEvents()
         slicer.mrmlScene.Clear(0)
@@ -465,8 +433,41 @@ class guiLogic(ScriptedLoadableModuleLogic):
         self.SpacingScale = SpacingScale
         self.IsotropicSpacing = IsotropicSpacing
         
-        for SeriesUID, CurrentNode in self.OpenDicom(DicomDir):
+        # Loop over all patients
+        for PatientUID in self.OpenDicom(DicomDir):
+            Studies = slicer.dicomDatabase.studiesForPatient(PatientUID)
+            if not Studies:
+                continue
 
+            # Loop over all studies for this patient
+            for StudyUID in Studies:
+                SeriesUIDs = slicer.dicomDatabase.seriesForStudy(StudyUID)
+                if not SeriesUIDs:
+                    continue
+
+                # Loop over all series for this study
+                for NodeID in DICOMUtils.loadSeriesByUID(list(SeriesUIDs)):
+                    Node = slicer.mrmlScene.GetNodeByID(NodeID)
+
+                    # Crop volume
+                    Cropped, ROI = self.CropVolume(Node)
+                    # lungmask
+                    Lung = self.LungMask(Cropped)
+                    # Total segmentator -> head cavities and glands
+                    Segment = self.GenerateSegment(Cropped)
+                    # consider saveNode instead
+                    '''
+                    https://slicer.readthedocs.io/en/latest/developer_guide/script_repository.html#save-the-scene-into-a-single-mrb-file
+                    '''
+
+                    SavePath = SaveDir / self.CleanFilename(f"{Cropped.GetName()}.mrb")
+                    if not slicer.util.saveScene(str(SavePath)):
+                        raise IOError("Failed to save")
+                    
+                    # clear the scene
+                    slicer.mrmlScene.Clear()
+                    slicer.app.processEvents()
+                    gc.collect()
 #
 # guiTest
 #
