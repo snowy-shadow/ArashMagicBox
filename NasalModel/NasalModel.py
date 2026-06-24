@@ -1,52 +1,45 @@
+import gc
 import logging
 import os
-from typing import Annotated, Optional
-
-import vtk
-
-import slicer
-from slicer.i18n import tr as _
-from slicer.i18n import translate
-from slicer.ScriptedLoadableModule import *
-from slicer.util import VTKObservationMixin
-from slicer.parameterNodeWrapper import (
-    parameterNodeWrapper,
-    WithinRange,
-)
+import re
+from datetime import datetime
 from pathlib import Path
 
-from datetime import datetime
+import slicer
+import vtk
 from DICOMLib import DICOMUtils
-import gc
-import re
+from slicer.i18n import tr, translate
+from slicer.parameterNodeWrapper import parameterNodeWrapper
+from slicer.ScriptedLoadableModule import *
+from slicer.util import VTKObservationMixin
+
+logger = logging.getLogger(__name__)
 
 #
-# gui
+# NasalModel
 #
 
-class gui(ScriptedLoadableModule):
+
+class NasalModel(ScriptedLoadableModule):
     """Uses ScriptedLoadableModule base class, available at:
     https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/ScriptedLoadableModule.py
     """
 
     def __init__(self, parent):
         ScriptedLoadableModule.__init__(self, parent)
-        self.parent.title = _("gui")  # TODO: make this more human readable by adding spaces
-        # TODO: set categories (folders where the module shows up in the module selector)
+        self.parent.title = tr("Nasal Model")
+        # set categories (folders where the module shows up in the module selector)
         self.parent.categories = [translate("qSlicerAbstractCoreModule", "Nasal")]
-        self.parent.dependencies = []  # TODO: add here list of module names that this module requires
-        self.parent.contributors = ["Tianze Kuang"]  # TODO: replace with "Firstname Lastname (Organization)"
-        # TODO: update with short description of the module and a link to online module documentation
-        # _() function marks text as translatable to other languages
-        self.parent.helpText = _("""
-            This is an example of scripted loadable module bundled in an extension.
-            See more information in <a href="https://github.com/organization/projectname#gui">module documentation</a>.
-            """)
+        self.parent.dependencies = []  # ["TotalSegmentator"]
+        self.parent.contributors = ["Tianze Kuang"]
+        self.parent.helpText = tr("""NasalModel extension""")
         # TODO: replace with organization, grant and thanks
-        self.parent.acknowledgementText = _("""This file was originally developed by Tianze Kuang""")
+        self.parent.acknowledgementText = tr(
+            """This file was originally developed by Tianze Kuang"""
+        )
 
         # Additional initialization step after application startup is complete
-        slicer.app.connect("startupCompleted()", registerSampleData)
+        # slicer.app.connect("startupCompleted()", registerSampleData)
 
 
 #
@@ -66,56 +59,58 @@ def registerSampleData():
     # To ensure that the source code repository remains small (can be downloaded and installed quickly)
     # it is recommended to store data sets that are larger than a few MB in a Github release.
 
-    # gui1
+    # nasal1
     SampleData.SampleDataLogic.registerCustomSampleDataSource(
         # Category and sample name displayed in Sample Data module
-        category="gui",
-        sampleName="gui1",
+        category="Nasal",
+        sampleName="NasalModel1",
         # Thumbnail should have size of approximately 260x280 pixels and stored in Resources/Icons folder.
         # It can be created by Screen Capture module, "Capture all views" option enabled, "Number of images" set to "Single".
-        thumbnailFileName=os.path.join(iconsPath, "gui1.png"),
+        thumbnailFileName=os.path.join(iconsPath, "Nasal1.png"),
         # Download URL and target file name
         uris="https://github.com/Slicer/SlicerTestingData/releases/download/SHA256/998cb522173839c78657f4bc0ea907cea09fd04e44601f17c82ea27927937b95",
-        fileNames="gui1.nrrd",
+        fileNames="nasal1.nrrd",
         # Checksum to ensure file integrity. Can be computed by this command:
-        #  import hashlib; print(hashlib.sha256(open(filename, "rb").read()).hexdigest())
+        #  import hashlib; logger.info(hashlib.sha256(open(filename, "rb").read()).hexdigest())
         checksums="SHA256:998cb522173839c78657f4bc0ea907cea09fd04e44601f17c82ea27927937b95",
         # This node name will be used when the data set is loaded
-        nodeNames="gui1",
+        nodeNames="NasalModel1",
     )
 
-    # gui2
+    # nasal2
     SampleData.SampleDataLogic.registerCustomSampleDataSource(
         # Category and sample name displayed in Sample Data module
-        category="gui",
-        sampleName="gui2",
-        thumbnailFileName=os.path.join(iconsPath, "gui2.png"),
+        category="Nasal",
+        sampleName="NasalModel2",
+        thumbnailFileName=os.path.join(iconsPath, "Nasal2.png"),
         # Download URL and target file name
         uris="https://github.com/Slicer/SlicerTestingData/releases/download/SHA256/1a64f3f422eb3d1c9b093d1a18da354b13bcf307907c66317e2463ee530b7a97",
-        fileNames="gui2.nrrd",
+        fileNames="nasal2.nrrd",
         checksums="SHA256:1a64f3f422eb3d1c9b093d1a18da354b13bcf307907c66317e2463ee530b7a97",
         # This node name will be used when the data set is loaded
-        nodeNames="gui2",
+        nodeNames="NasalModel2",
     )
 
 
 #
-# guiParameterNode
+# NasalModelParameterNode
 #
 @parameterNodeWrapper
-class guiParameterNode:
+class NasalModelParameterNode:
     """
     The parameters needed by module.
     DicomDir : directory of dicom files
     OutputDir : directory to store results to
     """
-    DicomDir : Path
-    OutputDir : Path
-    
+
+    DicomDir: Path
+    OutputDir: Path
+
+
 #
-# guiWidget
+# NasalModelWidget
 #
-class guiWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
+class NasalModelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     """Uses ScriptedLoadableModuleWidget base class, available at:
     https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/ScriptedLoadableModule.py
     """
@@ -134,7 +129,7 @@ class guiWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         # Load widget from .ui file (created by Qt Designer).
         # Additional widgets can be instantiated manually and added to self.layout.
-        uiWidget = slicer.util.loadUI(self.resourcePath("UI/gui.ui"))
+        uiWidget = slicer.util.loadUI(self.resourcePath("UI/NasalModel.ui"))
         self.layout.addWidget(uiWidget)
         self.ui = slicer.util.childWidgetVariables(uiWidget)
 
@@ -145,13 +140,17 @@ class guiWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         # Create logic class. Logic implements all computations that should be possible to run
         # in batch mode, without a graphical user interface.
-        self.logic = guiLogic()
+        self.logic = NasalModelLogic()
 
         # Connections
 
         # These connections ensure that we update parameter node when scene is closed
-        self.addObserver(slicer.mrmlScene, slicer.mrmlScene.StartCloseEvent, self.onSceneStartClose)
-        self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
+        self.addObserver(
+            slicer.mrmlScene, slicer.mrmlScene.StartCloseEvent, self.onSceneStartClose
+        )
+        self.addObserver(
+            slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose
+        )
 
         # Buttons
         self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
@@ -174,8 +173,10 @@ class guiWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         if self._parameterNode:
             self._parameterNode.disconnectGui(self._parameterNodeGuiTag)
             self._parameterNodeGuiTag = None
-            self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
-            
+            self.removeObserver(
+                self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply
+            )
+
     def onSceneStartClose(self, caller, event) -> None:
         """Called just before the scene is closed."""
         # Parameter node will be reset, do not use it anymore
@@ -193,7 +194,9 @@ class guiWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # so that when the scene is saved and reloaded, these settings are restored.
         self.setParameterNode(self.logic.getParameterNode())
 
-    def setParameterNode(self, inputParameterNode: Optional[guiParameterNode]) -> None:
+    def setParameterNode(
+        self, inputParameterNode: NasalModelParameterNode | None
+    ) -> None:
         """
         Set and observe parameter node.
         Observation is needed because when the parameter node is changed then the GUI must be updated immediately.
@@ -201,41 +204,60 @@ class guiWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         if self._parameterNode:
             self._parameterNode.disconnectGui(self._parameterNodeGuiTag)
-            self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
+            self.removeObserver(
+                self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply
+            )
 
         self._parameterNode = inputParameterNode
         if self._parameterNode:
             # Note: in the .ui file, a Qt dynamic property called "SlicerParameterName" is set on each
             # ui element that needs connection.
             self._parameterNodeGuiTag = self._parameterNode.connectGui(self.ui)
-            self.addObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
+            self.addObserver(
+                self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply
+            )
             self._checkCanApply()
 
     def _checkCanApply(self, caller=None, event=None) -> None:
-        if self._parameterNode and self._parameterNode.DicomDir.exists() and self._parameterNode.OutputDir.exists():
-            self.ui.applyButton.toolTip = _("Compute")
+        if (
+            self._parameterNode
+            and self._parameterNode.DicomDir.exists()
+            and self._parameterNode.OutputDir.exists()
+        ):
+            self.ui.applyButton.toolTip = tr("Compute")
             self.ui.applyButton.enabled = True
         else:
-            self.ui.applyButton.toolTip = _("Select input and output directory")
+            self.ui.applyButton.toolTip = tr("Select input and output directory")
             self.ui.applyButton.enabled = False
 
     def onApplyButton(self) -> None:
         """Run processing when user clicks "Apply" button."""
-        print(f"Dicom Dir {self._parameterNode.DicomDir}")
-        print(f"Output Dir {self._parameterNode.OutputDir}")
-        print(f"Spacing scale {self.ui.SpacingScalingSpinBox.value}")
-        print(f"Isotropic spacing {self.ui.IsotropicCheckbox.isChecked()}")
-        
-        with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
-            
-            self.logic.Process(self._parameterNode.DicomDir, self._parameterNode.OutputDir, self.ui.SpacingScalingSpinBox.value, self.ui.IsotropicCheckbox.isChecked())
+        logger.info(
+            f"""
+        Dicom Dir : {self._parameterNode.DicomDir}
+        Output Dir : {self._parameterNode.OutputDir}
+        Spacing scale : {self.ui.SpacingScalingSpinBox.value}
+        Isotropic spacing : {self.ui.IsotropicCheckbox.isChecked()}
+        """.strip()
+        )
+
+        with slicer.util.tryWithErrorDisplay(
+            tr("Failed to compute results."), waitCursor=True
+        ):
+            self.logic.Process(
+                self._parameterNode.DicomDir,
+                self._parameterNode.OutputDir,
+                self.ui.SpacingScalingSpinBox.value,
+                self.ui.IsotropicCheckbox.isChecked(),
+            )
 
 
 #
-# guiLogic
+# NasalModelLogic
 #
-        
-class guiLogic(ScriptedLoadableModuleLogic):
+
+
+class NasalModelLogic(ScriptedLoadableModuleLogic):
     """This class should implement all the actual
     computation done by your module.  The interface
     should be such that other python code can import
@@ -250,8 +272,8 @@ class guiLogic(ScriptedLoadableModuleLogic):
         ScriptedLoadableModuleLogic.__init__(self)
 
     def getParameterNode(self):
-        return guiParameterNode(super().getParameterNode())
-    
+        return NasalModelParameterNode(super().getParameterNode())
+
     def OpenDicom(self, DicomDir):
         """
         Import a DICOM folder into the permanent database,
@@ -263,13 +285,13 @@ class guiLogic(ScriptedLoadableModuleLogic):
 
         # Get all patients
         return slicer.dicomDatabase.patients()
-    
+
     def CropVolume(self, PatientNode):
         # new crop volume config
-        CropVolumeNode = slicer.vtkMRMLCropVolumeParametersNode() 
-        OutputNode = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLSegmentationNode')
+        CropVolumeNode = slicer.vtkMRMLCropVolumeParametersNode()
+        OutputNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
         OutputNode.SetName(f"{PatientNode.GetName()}_Cropped")
-        
+
         # add to scene
         slicer.mrmlScene.AddNode(CropVolumeNode)
         CropVolumeNode.SetSpacingScalingConst(self.SpacingScale)
@@ -303,17 +325,17 @@ class guiLogic(ScriptedLoadableModuleLogic):
         # chest imaging platform -> toolkit -> setgmentation -> generate simple lung mask using tissue + airway
         LungMask = slicer.modules.generatesimplelungmask
 
-        OutputNode = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLSegmentationNode')
+        OutputNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
         OutputNode.SetName(f"{InputNode.GetName()}_Lungmask")
 
         Config = {
             # do i have to put them into a file first???
-            'inputVolume': InputNode.GetID(),
-            'outputVolume': OutputNode.GetID(),
-            'lowDose' : False
+            "inputVolume": InputNode.GetID(),
+            "outputVolume": OutputNode.GetID(),
+            "lowDose": False,
         }
 
-        CliNode = slicer.cli.runSync(module = LungMask, parameters = Config)
+        CliNode = slicer.cli.runSync(module=LungMask, parameters=Config)
         if CliNode.GetStatus() & CliNode.ErrorsMask:
             raise ValueError("Failed to generate lung mask")
 
@@ -321,7 +343,7 @@ class guiLogic(ScriptedLoadableModuleLogic):
             return OutputNode
 
         # apply transformation fix
-        '''
+        """
         from current observation,
         applying space scaling with isometric sampling causes the image to comeout backwards,
         we need to rotate the model by 180 on the Y axis.
@@ -354,31 +376,35 @@ class guiLogic(ScriptedLoadableModuleLogic):
         segmentModelNode.ApplyTransform(Transformation)
 
         issue is the rotation changes the coordinate positions in world, so must do it seperately
-        '''
-        
+        """
+
         RotateTransform = vtk.vtkTransform()
         RotateTransform.Scale(-1, -1, 1)
         AdjustmentTransform = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTransformNode")
         AdjustmentTransform.SetMatrixTransformToParent(RotateTransform.GetMatrix())
         OutputNode.SetAndObserveTransformNodeID(AdjustmentTransform.GetID())
-        
+
         # xmin, xmax, ymin, ymax, zmin, zmaxs
         OutputBounds = [0] * 6
         OutputNode.GetRASBounds(OutputBounds)
-        
+
         # find the max of the original model
         InputBounds = [0] * 6
         InputNode.GetRASBounds(InputBounds)
-        
+
         # add to the shift
-        RotateTransform.Translate((OutputBounds[1] - InputBounds[1]), (OutputBounds[3] - InputBounds[3]), (OutputBounds[5] - InputBounds[5]))
+        RotateTransform.Translate(
+            (OutputBounds[1] - InputBounds[1]),
+            (OutputBounds[3] - InputBounds[3]),
+            (OutputBounds[5] - InputBounds[5]),
+        )
         AdjustmentTransform.SetMatrixTransformToParent(RotateTransform.GetMatrix())
 
         return OutputNode
 
     def GenerateSegment(self, InputNode):
-        TotalSegmentator = slicer.util.getModuleLogic('TotalSegmentator')
-        OutputNode = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLSegmentationNode')
+        TotalSegmentator = slicer.util.getModuleLogic("TotalSegmentator")
+        OutputNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
         OutputNode.SetName(f"{InputNode.GetName()}_TotalSegmentatorNode")
         """
         :param inputVolume: volume to be thresholded
@@ -392,25 +418,32 @@ class guiLogic(ScriptedLoadableModuleLogic):
         :param interactive: set to True to enable warning popups to be shown to users
         :param sequenceBrowserNode: if specified then all frames of the inputVolume sequence will be segmented
         """
-        TotalSegmentator.process(InputNode, OutputNode, fast = False, cpu = False, task = "head_glands_cavities", subset = None, interactive = False)
+        TotalSegmentator.process(
+            InputNode,
+            OutputNode,
+            fast=False,
+            cpu=False,
+            task="head_glands_cavities",
+            subset=None,
+            interactive=False,
+        )
         return OutputNode
-    
+
     def CleanFilename(self, Name):
         """
         Removes characters that are not alphanumeric, space, underscore, or hyphen.
         Also trims whitespace and replaces multiple spaces with a single underscore.
         """
         # Remove disallowed characters
-        Cleaned = re.sub(r'[<>:"/\\|?*\']', '', Name)
+        Cleaned = re.sub(r'[<>:"/\\|?*\']', "", Name)
         # Replace multiple spaces or hyphens with a single underscore
-        Cleaned = re.sub(r'[\s\-]+', '_', Cleaned)
+        Cleaned = re.sub(r"[\s\-]+", "_", Cleaned)
         # Trim leading/trailing underscores
-        Cleaned = Cleaned.strip('_')
+        Cleaned = Cleaned.strip("_")
 
         return Cleaned
-       
 
-    def Process(self, DicomDir, SavePath, SpacingScale = 0.5, IsotropicSpacing = True):
+    def Process(self, DicomDir, SavePath, SpacingScale=0.5, IsotropicSpacing=True):
         """
         Run the processing algorithm.
         Can be used without GUI widget.
@@ -421,18 +454,20 @@ class guiLogic(ScriptedLoadableModuleLogic):
         """
         if not DicomDir.exists() or not SavePath.exists():
             raise ValueError("DicomDir and or OutputDir is invalid")
-        
+
         # create a subfolder for results
-        SaveDir = SavePath / datetime.now().strftime("%Y%m%d_%H%M%S")  # e.g. "20250615_153045"
+        SaveDir = SavePath / datetime.now().strftime(
+            "%Y%m%d_%H%M%S"
+        )  # e.g. "20250615_153045"
         SaveDir.mkdir()
-            
+
         slicer.app.processEvents()
         slicer.mrmlScene.Clear(0)
         slicer.app.processEvents()
 
         self.SpacingScale = SpacingScale
         self.IsotropicSpacing = IsotropicSpacing
-        
+
         # Loop over all patients
         for PatientUID in self.OpenDicom(DicomDir):
             Studies = slicer.dicomDatabase.studiesForPatient(PatientUID)
@@ -456,23 +491,26 @@ class guiLogic(ScriptedLoadableModuleLogic):
                     # Total segmentator -> head cavities and glands
                     Segment = self.GenerateSegment(Cropped)
                     # consider saveNode instead
-                    '''
+                    """
                     https://slicer.readthedocs.io/en/latest/developer_guide/script_repository.html#save-the-scene-into-a-single-mrb-file
-                    '''
+                    """
 
                     SavePath = SaveDir / self.CleanFilename(f"{Cropped.GetName()}.mrb")
                     if not slicer.util.saveScene(str(SavePath)):
                         raise IOError("Failed to save")
-                    
+
                     # clear the scene
                     slicer.mrmlScene.Clear()
                     slicer.app.processEvents()
                     gc.collect()
+
+
 #
-# guiTest
+# NasalModelTest
 #
 
-class guiTest(ScriptedLoadableModuleTest):
+
+class NasalModelTest(ScriptedLoadableModuleTest):
     """
     This is the test case for your scripted module.
     Uses ScriptedLoadableModuleTest base class, available at:
@@ -486,9 +524,9 @@ class guiTest(ScriptedLoadableModuleTest):
     def runTest(self):
         """Run as few or as many tests as needed here."""
         self.setUp()
-        self.test_gui1()
+        self.test_nasal_model()
 
-    def test_gui1(self):
+    def test_nasal_model(self):
         """Ideally you should have several levels of tests.  At the lowest level
         tests should exercise the functionality of the logic with different inputs
         (both valid and invalid).  At higher levels your tests should emulate the
@@ -507,7 +545,7 @@ class guiTest(ScriptedLoadableModuleTest):
         import SampleData
 
         registerSampleData()
-        inputVolume = SampleData.downloadSample("gui1")
+        inputVolume = SampleData.downloadSample("NasalModel1")
         self.delayDisplay("Loaded test data set")
 
         inputScalarRange = inputVolume.GetImageData().GetScalarRange()
@@ -519,7 +557,7 @@ class guiTest(ScriptedLoadableModuleTest):
 
         # Test the module logic
 
-        logic = guiLogic()
+        logic = NasalModelLogic()
 
         # Test algorithm with non-inverted threshold
         logic.process(inputVolume, outputVolume, threshold, True)
