@@ -271,7 +271,7 @@ class NasalModelLogic(ScriptedLoadableModuleLogic):
     def CropVolume(self, PatientNode):
         # new crop volume config
         CropVolumeNode = slicer.vtkMRMLCropVolumeParametersNode()
-        OutputNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
+        OutputNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
         OutputNode.SetName(f"{PatientNode.GetName()}_Cropped")
 
         # add to scene
@@ -468,23 +468,27 @@ class NasalModelLogic(ScriptedLoadableModuleLogic):
                     Node = slicer.mrmlScene.GetNodeByID(NodeID)
 
                     # Crop volume
-                    Cropped, _ = self.CropVolume(Node)
+                    Cropped, ROI = self.CropVolume(Node)
                     # lungmask
-                    Lung = self.LungMask(Cropped)
+                    LungMask = self.LungMask(Cropped)
                     # Total segmentator -> head cavities and glands
-                    Segment = self.GenerateSegment(Cropped)
-                    slicer.app.processEvents()
+                    Segmentation = self.GenerateSegment(Cropped)
                     # consider saveNode instead
                     """
                     https://slicer.readthedocs.io/en/latest/developer_guide/script_repository.html#save-the-scene-into-a-single-mrb-file
                     """
+                    slicer.app.processEvents()
 
                     SavePath = SaveDir / self.CleanFilename(f"{Cropped.GetName()}.mrb")
                     if not slicer.util.saveScene(str(SavePath)):
                         raise IOError("Failed to save")
 
                     # clear the scene
-                    slicer.mrmlScene.Clear()
+                    for node in (Segmentation, LungMask, Cropped, ROI):
+                        if node:
+                            slicer.mrmlScene.RemoveNode(node)
+
+                    slicer.mrmlScene.Clear(0)
                     slicer.app.processEvents()
                     gc.collect()
 

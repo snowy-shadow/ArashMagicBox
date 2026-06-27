@@ -3,6 +3,10 @@ This extension has dependencies on
 - Chest Imaging Platform
 - Total Segmentator
 
+On Nasal Model Launch it will verify that all dependencies are available.
+If not it will attempt to install each extension one followed by a restart
+so your slicer program might restart twice
+
 # Data processing 
 The NasalModelLogic class handles all of the actual data processing  
 The main logic loop happens in the Function called Process.
