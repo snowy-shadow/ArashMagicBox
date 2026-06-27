@@ -1,3 +1,8 @@
+# Dependencies
+This extension has dependencies on
+- Chest Imaging Platform
+- Total Segmentator
+
 # Data processing 
 The NasalModelLogic class handles all of the actual data processing  
 The main logic loop happens in the Function called Process.

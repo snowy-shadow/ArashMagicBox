@@ -10,7 +10,7 @@ set(EXTENSION_CONTRIBUTORS "Tianze Kuang")
 set(EXTENSION_DESCRIPTION "Builds model of nasal cavity")
 set(EXTENSION_ICONURL "https://www.example.com/Slicer/Extensions/ArashMagicBox.png")
 set(EXTENSION_SCREENSHOTURLS "https://www.example.com/Slicer/Extensions/ArashMagicBox/Screenshots/1.png")
-set(EXTENSION_DEPENDS "AirwaySegmentation TotalSegmentator")
+set(EXTENSION_DEPENDS "Chest_Imaging_Platform TotalSegmentator")
 
 #-----------------------------------------------------------------------------
 # Extension dependencies

@@ -30,66 +30,19 @@ class NasalModel(ScriptedLoadableModule):
         self.parent.title = tr("Nasal Model")
         # set categories (folders where the module shows up in the module selector)
         self.parent.categories = [translate("qSlicerAbstractCoreModule", "Nasal")]
-        self.parent.dependencies = []  # ["TotalSegmentator"]
+        self.parent.dependencies = []
         self.parent.contributors = ["Tianze Kuang"]
-        self.parent.helpText = tr("""NasalModel extension""")
+        self.parent.helpText = tr("""
+            Generates a model of the Nasal structure
+            This module has dependencies on
+            - 'Total segmentator'
+            - 'Chest Imaging Platform'
+            Make sure they are installed in extension manager
+        """)
         # TODO: replace with organization, grant and thanks
         self.parent.acknowledgementText = tr(
             """This file was originally developed by Tianze Kuang"""
         )
-
-        # Additional initialization step after application startup is complete
-        # slicer.app.connect("startupCompleted()", registerSampleData)
-
-
-#
-# Register sample data sets in Sample Data module
-#
-
-
-def registerSampleData():
-    """Add data sets to Sample Data module."""
-    # It is always recommended to provide sample data for users to make it easy to try the module,
-    # but if no sample data is available then this method (and associated startupCompeted signal connection) can be removed.
-
-    import SampleData
-
-    iconsPath = os.path.join(os.path.dirname(__file__), "Resources/Icons")
-
-    # To ensure that the source code repository remains small (can be downloaded and installed quickly)
-    # it is recommended to store data sets that are larger than a few MB in a Github release.
-
-    # nasal1
-    SampleData.SampleDataLogic.registerCustomSampleDataSource(
-        # Category and sample name displayed in Sample Data module
-        category="Nasal",
-        sampleName="NasalModel1",
-        # Thumbnail should have size of approximately 260x280 pixels and stored in Resources/Icons folder.
-        # It can be created by Screen Capture module, "Capture all views" option enabled, "Number of images" set to "Single".
-        thumbnailFileName=os.path.join(iconsPath, "Nasal1.png"),
-        # Download URL and target file name
-        uris="https://github.com/Slicer/SlicerTestingData/releases/download/SHA256/998cb522173839c78657f4bc0ea907cea09fd04e44601f17c82ea27927937b95",
-        fileNames="nasal1.nrrd",
-        # Checksum to ensure file integrity. Can be computed by this command:
-        #  import hashlib; logger.info(hashlib.sha256(open(filename, "rb").read()).hexdigest())
-        checksums="SHA256:998cb522173839c78657f4bc0ea907cea09fd04e44601f17c82ea27927937b95",
-        # This node name will be used when the data set is loaded
-        nodeNames="NasalModel1",
-    )
-
-    # nasal2
-    SampleData.SampleDataLogic.registerCustomSampleDataSource(
-        # Category and sample name displayed in Sample Data module
-        category="Nasal",
-        sampleName="NasalModel2",
-        thumbnailFileName=os.path.join(iconsPath, "Nasal2.png"),
-        # Download URL and target file name
-        uris="https://github.com/Slicer/SlicerTestingData/releases/download/SHA256/1a64f3f422eb3d1c9b093d1a18da354b13bcf307907c66317e2463ee530b7a97",
-        fileNames="nasal2.nrrd",
-        checksums="SHA256:1a64f3f422eb3d1c9b093d1a18da354b13bcf307907c66317e2463ee530b7a97",
-        # This node name will be used when the data set is loaded
-        nodeNames="NasalModel2",
-    )
 
 
 #
@@ -114,6 +67,11 @@ class NasalModelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     """Uses ScriptedLoadableModuleWidget base class, available at:
     https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/ScriptedLoadableModule.py
     """
+
+    EXTENSION_DEPENDENCIES = {
+        "TotalSegmentator": "TotalSegmentator",
+        "GenerateSimpleLungMask": "Chest_Imaging_Platform",
+    }
 
     def __init__(self, parent=None) -> None:
         """Called when the user opens the module the first time and the widget is initialized."""
@@ -158,6 +116,32 @@ class NasalModelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
 
+        self._ensure_extensions(self.EXTENSION_DEPENDENCIES)
+
+    def _ensure_extensions(self, required: dict[str, str], interactive=False):
+        em = slicer.app.extensionsManagerModel()
+        em.interactive = interactive
+
+        missing = []
+
+        for module, ext in required.items():
+            try:
+                slicer.util.getModule(module)
+            except RuntimeError:
+                logger.info(
+                    f"Required module '{module}' not found. Installing extension '{ext}'..."
+                )
+                # this will auto install and restart per ext installed
+                # setting restart=False seems to cause slicer to hang
+                if not em.installExtensionFromServer(ext):
+                    missing.append(module)
+
+        if missing:
+            raise RuntimeError(
+                "The following required modules could not be found:\n"
+                + "\n".join(f"• {m}" for m in missing)
+            )
+
     def cleanup(self) -> None:
         """Called when the application closes and the module widget is destroyed."""
         self.removeObservers()
@@ -194,9 +178,7 @@ class NasalModelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # so that when the scene is saved and reloaded, these settings are restored.
         self.setParameterNode(self.logic.getParameterNode())
 
-    def setParameterNode(
-        self, inputParameterNode: NasalModelParameterNode | None
-    ) -> None:
+    def setParameterNode(self, inputParameterNode: NasalModelParameterNode) -> None:
         """
         Set and observe parameter node.
         Observation is needed because when the parameter node is changed then the GUI must be updated immediately.
@@ -323,13 +305,12 @@ class NasalModelLogic(ScriptedLoadableModuleLogic):
 
     def LungMask(self, InputNode):
         # chest imaging platform -> toolkit -> setgmentation -> generate simple lung mask using tissue + airway
-        LungMask = slicer.modules.generatesimplelungmask
+        LungMask = slicer.util.getModule("GenerateSimpleLungMask")
 
         OutputNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
         OutputNode.SetName(f"{InputNode.GetName()}_Lungmask")
 
         Config = {
-            # do i have to put them into a file first???
             "inputVolume": InputNode.GetID(),
             "outputVolume": OutputNode.GetID(),
             "lowDose": False,
@@ -404,8 +385,10 @@ class NasalModelLogic(ScriptedLoadableModuleLogic):
 
     def GenerateSegment(self, InputNode):
         TotalSegmentator = slicer.util.getModuleLogic("TotalSegmentator")
+
         OutputNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
         OutputNode.SetName(f"{InputNode.GetName()}_TotalSegmentatorNode")
+        OutputNode.CreateDefaultDisplayNodes()
         """
         :param inputVolume: volume to be thresholded
         :param outputVolume: thresholding result
@@ -485,11 +468,12 @@ class NasalModelLogic(ScriptedLoadableModuleLogic):
                     Node = slicer.mrmlScene.GetNodeByID(NodeID)
 
                     # Crop volume
-                    Cropped, ROI = self.CropVolume(Node)
+                    Cropped, _ = self.CropVolume(Node)
                     # lungmask
                     Lung = self.LungMask(Cropped)
                     # Total segmentator -> head cavities and glands
                     Segment = self.GenerateSegment(Cropped)
+                    slicer.app.processEvents()
                     # consider saveNode instead
                     """
                     https://slicer.readthedocs.io/en/latest/developer_guide/script_repository.html#save-the-scene-into-a-single-mrb-file
@@ -537,38 +521,4 @@ class NasalModelTest(ScriptedLoadableModuleTest):
         module.  For example, if a developer removes a feature that you depend on,
         your test should break so they know that the feature is needed.
         """
-
-        self.delayDisplay("Starting the test")
-
-        # Get/create input data
-
-        import SampleData
-
-        registerSampleData()
-        inputVolume = SampleData.downloadSample("NasalModel1")
-        self.delayDisplay("Loaded test data set")
-
-        inputScalarRange = inputVolume.GetImageData().GetScalarRange()
-        self.assertEqual(inputScalarRange[0], 0)
-        self.assertEqual(inputScalarRange[1], 695)
-
-        outputVolume = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
-        threshold = 100
-
-        # Test the module logic
-
-        logic = NasalModelLogic()
-
-        # Test algorithm with non-inverted threshold
-        logic.process(inputVolume, outputVolume, threshold, True)
-        outputScalarRange = outputVolume.GetImageData().GetScalarRange()
-        self.assertEqual(outputScalarRange[0], inputScalarRange[0])
-        self.assertEqual(outputScalarRange[1], threshold)
-
-        # Test algorithm with inverted threshold
-        logic.process(inputVolume, outputVolume, threshold, False)
-        outputScalarRange = outputVolume.GetImageData().GetScalarRange()
-        self.assertEqual(outputScalarRange[0], inputScalarRange[0])
-        self.assertEqual(outputScalarRange[1], inputScalarRange[1])
-
-        self.delayDisplay("Test passed")
+        raise NotImplementedError
